@@ -1,0 +1,938 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow Annotator</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e12;
+    --surface: #18181f;
+    --surface-2: #22222c;
+    --border: #2a2a36;
+    --text: #e4e4ed;
+    --text-dim: #7a7a8e;
+    --accent: #6c5ce7;
+    --accent-light: #a29bfe;
+    --accent-glow: rgba(108, 92, 231, 0.25);
+    --green: #00b894;
+    --orange: #fdcb6e;
+    --red: #e17055;
+    --box-stroke: #6c5ce7;
+    --arrow-stroke: #a29bfe;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 15px;
+    letter-spacing: -0.5px;
+    color: var(--accent-light);
+  }
+
+  .logo span { color: var(--text-dim); }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .status-pill .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+
+  .status-pill.active .dot { background: var(--green); }
+  .status-pill.active { color: var(--green); border-color: rgba(0,184,148,0.3); }
+
+  .btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn:hover { background: var(--border); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #5a4bd6; }
+  .btn.danger { color: var(--red); }
+  .btn.danger:hover { background: rgba(225,112,85,0.1); }
+
+  .canvas-area {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    -webkit-overflow-scrolling: auto;
+    background:
+      radial-gradient(circle at 50% 50%, rgba(108,92,231,0.03) 0%, transparent 70%),
+      repeating-linear-gradient(0deg, transparent, transparent 39px, var(--border) 39px, var(--border) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, var(--border) 39px, var(--border) 40px);
+    background-size: 100% 100%, 40px 40px, 40px 40px;
+    background-position: center;
+  }
+
+  .upload-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 60px 80px;
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: rgba(24,24,31,0.8);
+    backdrop-filter: blur(10px);
+  }
+
+  .upload-zone:hover {
+    border-color: var(--accent);
+    background: rgba(108,92,231,0.05);
+  }
+
+  .upload-zone svg { opacity: 0.4; }
+  .upload-zone:hover svg { opacity: 0.7; }
+
+  .upload-zone h3 {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .upload-zone p {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  #fileInput { display: none; }
+
+  .canvas-wrapper {
+    position: relative;
+    display: none;
+    touch-action: none;
+  }
+
+  .canvas-wrapper img {
+    display: block;
+    max-width: 90vw;
+    max-height: calc(100vh - 120px);
+    border-radius: 8px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    user-select: none;
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+    object-fit: contain;
+  }
+
+  .canvas-wrapper svg.overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    border-radius: 8px;
+  }
+
+  .canvas-wrapper svg.overlay .interaction-layer {
+    pointer-events: all;
+    touch-action: none;
+  }
+
+  .bbox {
+    fill: rgba(108, 92, 231, 0.08);
+    stroke: var(--box-stroke);
+    stroke-width: 2;
+    rx: 4;
+    transition: fill 0.15s;
+  }
+
+  .bbox:hover {
+    fill: rgba(108, 92, 231, 0.15);
+  }
+
+  .bbox-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    fill: #fff;
+    pointer-events: none;
+  }
+
+  .bbox-label-bg {
+    fill: var(--accent);
+    rx: 3;
+  }
+
+  .arrow-line {
+    stroke: var(--arrow-stroke);
+    stroke-width: 2;
+    fill: none;
+    marker-end: url(#arrowhead);
+  }
+
+  .temp-box {
+    fill: rgba(108, 92, 231, 0.12);
+    stroke: var(--accent-light);
+    stroke-width: 2;
+    stroke-dasharray: 6 3;
+    rx: 4;
+  }
+
+  .instructions-bar {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 13px;
+    color: var(--text-dim);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    z-index: 50;
+    white-space: nowrap;
+  }
+
+  .instructions-bar kbd {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  .instructions-bar .sep {
+    width: 1px;
+    height: 16px;
+    background: var(--border);
+  }
+
+  .step-counter {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-light);
+  }
+
+  @media (max-width: 640px) {
+    header { padding: 10px 14px; }
+    .logo { font-size: 13px; }
+    .toolbar { gap: 4px; }
+    .btn { padding: 6px 10px; font-size: 11px; }
+    .status-pill { padding: 4px 8px; font-size: 11px; }
+    .upload-zone { padding: 40px 30px; }
+    .upload-zone h3 { font-size: 14px; }
+    .instructions-bar {
+      bottom: 12px;
+      padding: 8px 14px;
+      font-size: 11px;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      white-space: normal;
+      text-align: center;
+      max-width: 90vw;
+    }
+    .canvas-wrapper img {
+      max-width: 98vw;
+      max-height: calc(100vh - 110px);
+      border-radius: 4px;
+    }
+    .canvas-wrapper {
+      max-width: 98vw;
+      max-height: calc(100vh - 110px);
+    }
+  }
+
+  /* Label input */
+  .label-input-wrapper {
+    position: absolute;
+    z-index: 200;
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .label-input-wrapper.visible {
+    display: flex;
+  }
+
+  .label-input {
+    padding: 4px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--text);
+    outline: none;
+    min-width: 80px;
+    box-shadow: 0 2px 12px var(--accent-glow);
+  }
+
+  .label-confirm-btn {
+    padding: 4px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: var(--accent);
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">flow<span>.annotate</span></div>
+  <div class="toolbar">
+    <div class="status-pill" id="statusPill">
+      <div class="dot"></div>
+      <span id="statusText">No image</span>
+    </div>
+    <button class="btn" id="undoBtn" style="display:none" onclick="undo()">Undo</button>
+    <button class="btn" id="doneBtn" style="display:none" onclick="finishFlow()">Done</button>
+    <button class="btn danger" id="clearBtn" style="display:none" onclick="clearAll()">Clear</button>
+    <button class="btn primary" id="exportBtn" style="display:none" onclick="exportImage()">Export PNG</button>
+  </div>
+</header>
+
+<div class="canvas-area" id="canvasArea">
+  <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <path d="m21 15-5-5L5 21"/>
+    </svg>
+    <h3>Drop a screenshot here</h3>
+    <p>or click to browse or paste from clipboard</p>
+  </div>
+  <input type="file" id="fileInput" accept="image/*">
+
+  <div class="canvas-wrapper" id="canvasWrapper">
+    <img id="screenshotImg" draggable="false">
+    <svg class="overlay" id="svgOverlay">
+      <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto" fill="var(--arrow-stroke)">
+          <polygon points="0 0, 10 3.5, 0 7" />
+        </marker>
+      </defs>
+      <g class="interaction-layer" id="interactionLayer"></g>
+    </svg>
+    <div class="label-input-wrapper" id="labelInputWrapper">
+      <input class="label-input" id="labelInput" placeholder="Label..." maxlength="30">
+      <button class="label-confirm-btn" id="labelConfirmBtn">OK</button>
+    </div>
+  </div>
+
+  <div class="instructions-bar" id="instructionsBar" style="display:none">
+    <span class="step-counter" id="stepCounter">Step 1</span>
+    <div class="sep"></div>
+    <span id="instructionText">Click &amp; drag to create a box</span>
+    <div class="sep"></div>
+    <kbd>Esc</kbd> / <kbd>Enter</kbd> finish &nbsp; <kbd>Ctrl+Z</kbd> undo
+  </div>
+</div>
+
+<script>
+const state = {
+  boxes: [],       // {x, y, w, h, label}
+  arrows: [],      // {from: boxIndex, to: boxIndex}
+  drawing: false,
+  startX: 0, startY: 0,
+  phase: 'box',    // 'box' | 'arrow-start' | 'arrow-end' | 'label'
+  tempBox: null,
+  currentFromBox: null,
+  history: [],
+  finished: false
+};
+
+const fileInput = document.getElementById('fileInput');
+const uploadZone = document.getElementById('uploadZone');
+const canvasWrapper = document.getElementById('canvasWrapper');
+const screenshotImg = document.getElementById('screenshotImg');
+const svgOverlay = document.getElementById('svgOverlay');
+const interactionLayer = document.getElementById('interactionLayer');
+const instructionsBar = document.getElementById('instructionsBar');
+const statusPill = document.getElementById('statusPill');
+const statusText = document.getElementById('statusText');
+const stepCounter = document.getElementById('stepCounter');
+const instructionText = document.getElementById('instructionText');
+const labelInput = document.getElementById('labelInput');
+const labelInputWrapper = document.getElementById('labelInputWrapper');
+
+// Upload handling
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files && e.target.files[0]) loadImage(e.target.files[0]);
+});
+
+// Paste from clipboard (Ctrl+V / Cmd+V)
+document.addEventListener('paste', (e) => {
+  // Don't intercept paste when typing a label
+  if (state.phase === 'label') return;
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) loadImage(file);
+      return;
+    }
+  }
+});
+
+const canvasArea = document.getElementById('canvasArea');
+canvasArea.addEventListener('dragover', (e) => { e.preventDefault(); });
+canvasArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  if (e.dataTransfer.files[0]) loadImage(e.dataTransfer.files[0]);
+});
+
+function loadImage(file) {
+  // Use FileReader for maximum mobile compatibility
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const dataUrl = evt.target.result;
+
+    // Create a temporary Image to get dimensions and normalize via canvas
+    const tempImg = new Image();
+    tempImg.onload = () => {
+      // Draw to an offscreen canvas to normalize EXIF orientation
+      // and produce a clean data URL that all browsers handle consistently
+      const maxDim = 2400; // cap so mobile doesn't choke
+      let w = tempImg.naturalWidth;
+      let h = tempImg.naturalHeight;
+      if (w > maxDim || h > maxDim) {
+        const scale = maxDim / Math.max(w, h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+
+      const offscreen = document.createElement('canvas');
+      offscreen.width = w;
+      offscreen.height = h;
+      const octx = offscreen.getContext('2d');
+      octx.drawImage(tempImg, 0, 0, w, h);
+
+      const normalizedUrl = offscreen.toDataURL('image/png');
+
+      // Now set the actual display image
+      screenshotImg.onload = () => {
+        showCanvas();
+      };
+      screenshotImg.onerror = () => {
+        // Fallback: try original dataUrl directly
+        screenshotImg.onload = showCanvas;
+        screenshotImg.onerror = null;
+        screenshotImg.src = dataUrl;
+      };
+      screenshotImg.src = normalizedUrl;
+    };
+
+    tempImg.onerror = () => {
+      // Fallback: set src directly
+      screenshotImg.onload = showCanvas;
+      screenshotImg.src = dataUrl;
+    };
+
+    tempImg.src = dataUrl;
+  };
+
+  reader.onerror = () => {
+    // Last resort fallback with blob URL
+    const url = URL.createObjectURL(file);
+    screenshotImg.onload = showCanvas;
+    screenshotImg.src = url;
+  };
+
+  reader.readAsDataURL(file);
+}
+
+function showCanvas() {
+  uploadZone.style.display = 'none';
+  canvasWrapper.style.display = 'block';
+  instructionsBar.style.display = 'flex';
+  document.getElementById('undoBtn').style.display = '';
+  document.getElementById('doneBtn').style.display = '';
+  document.getElementById('clearBtn').style.display = '';
+  document.getElementById('exportBtn').style.display = '';
+
+  // Force a layout pass so the image has rendered dimensions
+  // before we try to do anything with the SVG overlay
+  requestAnimationFrame(() => {
+    render();
+    setStatus('active', 'Drawing boxes');
+    updateInstructions();
+    state.finished = false;
+  });
+}
+
+function setStatus(type, text) {
+  statusPill.className = 'status-pill' + (type === 'active' ? ' active' : '');
+  statusText.textContent = text;
+}
+
+function updateInstructions() {
+  if (state.finished) {
+    instructionText.textContent = 'Flow complete! Export or continue editing.';
+    stepCounter.textContent = `${state.boxes.length} boxes, ${state.arrows.length} arrows`;
+    setStatus('active', 'Complete');
+    return;
+  }
+
+  const boxCount = state.boxes.length;
+
+  if (boxCount < 1) {
+    stepCounter.textContent = 'Step 1';
+    instructionText.textContent = 'Click & drag to create your first box';
+    setStatus('active', 'Drawing boxes');
+  } else if (state.phase === 'box') {
+    stepCounter.textContent = `Box ${boxCount + 1}`;
+    instructionText.textContent = 'Click & drag to create next box (arrow will connect from previous)';
+    setStatus('active', 'Drawing boxes');
+  } else if (state.phase === 'label') {
+    instructionText.textContent = 'Type a label, then press Enter';
+  }
+}
+
+// SVG coordinate helper — works with both mouse and touch events
+function getSVGPoint(e) {
+  const rect = svgOverlay.getBoundingClientRect();
+  let clientX, clientY;
+  if (e.touches && e.touches.length > 0) {
+    clientX = e.touches[0].clientX;
+    clientY = e.touches[0].clientY;
+  } else if (e.changedTouches && e.changedTouches.length > 0) {
+    clientX = e.changedTouches[0].clientX;
+    clientY = e.changedTouches[0].clientY;
+  } else {
+    clientX = e.clientX;
+    clientY = e.clientY;
+  }
+  return {
+    x: clientX - rect.left,
+    y: clientY - rect.top
+  };
+}
+
+// Unified pointer start
+function onPointerStart(e) {
+  if (state.finished || state.phase === 'label') return;
+  e.preventDefault();
+  const pt = getSVGPoint(e);
+  state.drawing = true;
+  state.startX = pt.x;
+  state.startY = pt.y;
+
+  // Create temp box
+  state.tempBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  state.tempBox.classList.add('temp-box');
+  state.tempBox.setAttribute('x', pt.x);
+  state.tempBox.setAttribute('y', pt.y);
+  state.tempBox.setAttribute('width', 0);
+  state.tempBox.setAttribute('height', 0);
+  interactionLayer.appendChild(state.tempBox);
+}
+
+function onPointerMove(e) {
+  if (!state.drawing || !state.tempBox) return;
+  e.preventDefault();
+  const pt = getSVGPoint(e);
+  const x = Math.min(state.startX, pt.x);
+  const y = Math.min(state.startY, pt.y);
+  const w = Math.abs(pt.x - state.startX);
+  const h = Math.abs(pt.y - state.startY);
+  state.tempBox.setAttribute('x', x);
+  state.tempBox.setAttribute('y', y);
+  state.tempBox.setAttribute('width', w);
+  state.tempBox.setAttribute('height', h);
+}
+
+function onPointerEnd(e) {
+  if (!state.drawing || !state.tempBox) return;
+  state.drawing = false;
+
+  const x = parseFloat(state.tempBox.getAttribute('x'));
+  const y = parseFloat(state.tempBox.getAttribute('y'));
+  const w = parseFloat(state.tempBox.getAttribute('width'));
+  const h = parseFloat(state.tempBox.getAttribute('height'));
+
+  interactionLayer.removeChild(state.tempBox);
+  state.tempBox = null;
+
+  // Minimum size check
+  if (w < 10 || h < 10) return;
+
+  // Save state for undo
+  saveHistory();
+
+  const boxIndex = state.boxes.length;
+  state.boxes.push({ x, y, w, h, label: `${boxIndex + 1}` });
+
+  // Auto-connect arrow from previous box
+  if (boxIndex > 0) {
+    state.arrows.push({ from: boxIndex - 1, to: boxIndex });
+  }
+
+  // Show label input
+  showLabelInput(boxIndex, x, y);
+}
+
+// Mouse events
+interactionLayer.addEventListener('mousedown', onPointerStart);
+window.addEventListener('mousemove', onPointerMove);
+window.addEventListener('mouseup', onPointerEnd);
+
+// Touch events
+interactionLayer.addEventListener('touchstart', onPointerStart, { passive: false });
+window.addEventListener('touchmove', onPointerMove, { passive: false });
+window.addEventListener('touchend', onPointerEnd, { passive: false });
+
+function showLabelInput(boxIndex, x, y) {
+  state.phase = 'label';
+  const rect = canvasWrapper.getBoundingClientRect();
+  const svgRect = svgOverlay.getBoundingClientRect();
+
+  labelInputWrapper.classList.add('visible');
+  labelInputWrapper.style.left = (x + 4) + 'px';
+  labelInputWrapper.style.top = (y + 4) + 'px';
+  labelInput.value = '';
+  labelInput.placeholder = `Step ${boxIndex + 1}`;
+  labelInput.focus();
+
+  function confirmLabel() {
+    const label = labelInput.value.trim() || `Step ${boxIndex + 1}`;
+    state.boxes[boxIndex].label = label;
+    labelInputWrapper.classList.remove('visible');
+    state.phase = 'box';
+    render();
+    updateInstructions();
+    // Clean up
+    labelInput.onkeydown = null;
+    document.getElementById('labelConfirmBtn').onclick = null;
+  }
+
+  labelInput.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmLabel();
+    } else if (e.key === 'Escape') {
+      state.boxes[boxIndex].label = `Step ${boxIndex + 1}`;
+      labelInputWrapper.classList.remove('visible');
+      state.phase = 'box';
+      state.finished = true;
+      render();
+      updateInstructions();
+    }
+  };
+
+  document.getElementById('labelConfirmBtn').onclick = () => {
+    confirmLabel();
+  };
+}
+
+function render() {
+  // Clear all rendered elements
+  while (interactionLayer.firstChild) {
+    interactionLayer.removeChild(interactionLayer.firstChild);
+  }
+
+  // Ensure the interaction rect is there
+  const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  bgRect.setAttribute('width', '100%');
+  bgRect.setAttribute('height', '100%');
+  bgRect.setAttribute('fill', 'transparent');
+  interactionLayer.appendChild(bgRect);
+
+  // Draw arrows
+  state.arrows.forEach((arrow) => {
+    const from = state.boxes[arrow.from];
+    const to = state.boxes[arrow.to];
+    if (!from || !to) return;
+
+    const pts = getArrowPoints(from, to);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.classList.add('arrow-line');
+    line.setAttribute('x1', pts.x1);
+    line.setAttribute('y1', pts.y1);
+    line.setAttribute('x2', pts.x2);
+    line.setAttribute('y2', pts.y2);
+    interactionLayer.appendChild(line);
+  });
+
+  // Draw boxes
+  state.boxes.forEach((box, i) => {
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.classList.add('bbox');
+    rect.setAttribute('x', box.x);
+    rect.setAttribute('y', box.y);
+    rect.setAttribute('width', box.w);
+    rect.setAttribute('height', box.h);
+    interactionLayer.appendChild(rect);
+
+    // Label background
+    const labelText = box.label || `${i + 1}`;
+    const textLen = labelText.length * 7 + 12;
+    const labelBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    labelBg.classList.add('bbox-label-bg');
+    labelBg.setAttribute('x', box.x);
+    labelBg.setAttribute('y', box.y - 20);
+    labelBg.setAttribute('width', textLen);
+    labelBg.setAttribute('height', 18);
+    interactionLayer.appendChild(labelBg);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.classList.add('bbox-label');
+    text.setAttribute('x', box.x + 6);
+    text.setAttribute('y', box.y - 6);
+    text.textContent = labelText;
+    interactionLayer.appendChild(text);
+  });
+}
+
+function getArrowPoints(from, to) {
+  const fromCx = from.x + from.w / 2;
+  const fromCy = from.y + from.h / 2;
+  const toCx = to.x + to.w / 2;
+  const toCy = to.y + to.h / 2;
+
+  // Find edge intersection points
+  return {
+    x1: clampToEdge(fromCx, fromCy, toCx, toCy, from).x,
+    y1: clampToEdge(fromCx, fromCy, toCx, toCy, from).y,
+    x2: clampToEdge(toCx, toCy, fromCx, fromCy, to).x,
+    y2: clampToEdge(toCx, toCy, fromCx, fromCy, to).y,
+  };
+}
+
+function clampToEdge(cx, cy, tx, ty, box) {
+  const dx = tx - cx;
+  const dy = ty - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+
+  const hw = box.w / 2;
+  const hh = box.h / 2;
+
+  let t = Infinity;
+  if (dx !== 0) {
+    const tl = hw / Math.abs(dx);
+    t = Math.min(t, tl);
+  }
+  if (dy !== 0) {
+    const tt = hh / Math.abs(dy);
+    t = Math.min(t, tt);
+  }
+
+  return {
+    x: cx + dx * t,
+    y: cy + dy * t
+  };
+}
+
+// Keyboard shortcuts
+window.addEventListener('keydown', (e) => {
+  if (state.phase === 'label') return; // let label input handle its own keys
+
+  if (e.key === 'Escape' || e.key === 'Enter') {
+    finishFlow();
+  }
+
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault();
+    undo();
+  }
+});
+
+function finishFlow() {
+  // If in label phase, confirm the label first
+  if (state.phase === 'label') {
+    const boxIndex = state.boxes.length - 1;
+    const label = labelInput.value.trim() || `Step ${boxIndex + 1}`;
+    state.boxes[boxIndex].label = label;
+    labelInputWrapper.classList.remove('visible');
+    state.phase = 'box';
+    render();
+  }
+  state.finished = true;
+  updateInstructions();
+}
+
+function saveHistory() {
+  state.history.push({
+    boxes: JSON.parse(JSON.stringify(state.boxes)),
+    arrows: JSON.parse(JSON.stringify(state.arrows))
+  });
+}
+
+function undo() {
+  if (state.history.length === 0) return;
+  const prev = state.history.pop();
+  state.boxes = prev.boxes;
+  state.arrows = prev.arrows;
+  state.finished = false;
+  state.phase = 'box';
+  labelInputWrapper.classList.remove('visible');
+  render();
+  updateInstructions();
+}
+
+function clearAll() {
+  saveHistory();
+  state.boxes = [];
+  state.arrows = [];
+  state.finished = false;
+  state.phase = 'box';
+  labelInputWrapper.classList.remove('visible');
+  render();
+  updateInstructions();
+}
+
+function exportImage() {
+  const canvas = document.createElement('canvas');
+  const img = screenshotImg;
+
+  // Use natural image dimensions for high-res export
+  const scaleX = img.naturalWidth / img.clientWidth;
+  const scaleY = img.naturalHeight / img.clientHeight;
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+
+  // Draw arrows
+  state.arrows.forEach((arrow) => {
+    const from = state.boxes[arrow.from];
+    const to = state.boxes[arrow.to];
+    if (!from || !to) return;
+    const pts = getArrowPoints(from, to);
+
+    ctx.save();
+    ctx.strokeStyle = '#a29bfe';
+    ctx.lineWidth = 2.5 * scaleX;
+    ctx.beginPath();
+    ctx.moveTo(pts.x1 * scaleX, pts.y1 * scaleY);
+    ctx.lineTo(pts.x2 * scaleX, pts.y2 * scaleY);
+    ctx.stroke();
+
+    // Arrowhead
+    const angle = Math.atan2(pts.y2 - pts.y1, pts.x2 - pts.x1);
+    const headLen = 14 * scaleX;
+    ctx.fillStyle = '#a29bfe';
+    ctx.beginPath();
+    ctx.moveTo(pts.x2 * scaleX, pts.y2 * scaleY);
+    ctx.lineTo(pts.x2 * scaleX - headLen * Math.cos(angle - 0.4), pts.y2 * scaleY - headLen * Math.sin(angle - 0.4));
+    ctx.lineTo(pts.x2 * scaleX - headLen * Math.cos(angle + 0.4), pts.y2 * scaleY - headLen * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // Draw boxes
+  state.boxes.forEach((box) => {
+    ctx.save();
+    ctx.strokeStyle = '#6c5ce7';
+    ctx.lineWidth = 2.5 * scaleX;
+    ctx.fillStyle = 'rgba(108, 92, 231, 0.08)';
+    const r = 4 * scaleX;
+    roundRect(ctx, box.x * scaleX, box.y * scaleY, box.w * scaleX, box.h * scaleY, r);
+    ctx.fill();
+    ctx.stroke();
+
+    // Label
+    const label = box.label;
+    const fontSize = 13 * scaleX;
+    ctx.font = `600 ${fontSize}px 'DM Sans', sans-serif`;
+    const tw = ctx.measureText(label).width + 12 * scaleX;
+    ctx.fillStyle = '#6c5ce7';
+    roundRect(ctx, box.x * scaleX, (box.y - 20) * scaleY, tw, 18 * scaleY, 3 * scaleX);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, box.x * scaleX + 6 * scaleX, (box.y - 6) * scaleY);
+    ctx.restore();
+  });
+
+  const link = document.createElement('a');
+  link.download = 'annotated-flow.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// Initial render call sets up interaction rect
+render();
+</script>
+
+</body>
+</html>
