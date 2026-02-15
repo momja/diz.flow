@@ -755,6 +755,8 @@ canvasArea.addEventListener('touchstart', (e) => {
 
 function onDrawStart(e) {
   if (state.mode !== 'draw' || state.phase !== 'box') return;
+  // Only left mouse button
+  if (e.button && e.button !== 0) return;
   e.preventDefault();
   e.stopPropagation();
   const pt = getClientPos(e);
@@ -793,7 +795,7 @@ function onDrawEnd(e) {
   const y = +state.tempBox.getAttribute('y');
   const w = +state.tempBox.getAttribute('width');
   const h = +state.tempBox.getAttribute('height');
-  drawLayer.removeChild(state.tempBox);
+  if (state.tempBox.parentNode) state.tempBox.parentNode.removeChild(state.tempBox);
   state.tempBox = null;
 
   if (w < 5 / cam.zoom || h < 5 / cam.zoom) return;
