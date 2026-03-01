@@ -222,6 +222,26 @@
   }
   .mode-toggle button:hover:not(.active) { background: var(--border); }
 
+  .text-size-control {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text-dim);
+    font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  }
+  .text-size-control span { user-select: none; }
+  .text-size-control input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 64px; height: 2px; background: var(--border); border-radius: 2px; cursor: pointer;
+  }
+  .text-size-control input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 12px; height: 12px; border-radius: 50%; background: var(--accent); cursor: pointer;
+  }
+  .text-size-control input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px; border-radius: 50%; border: none;
+    background: var(--accent); cursor: pointer;
+  }
+
   @media (max-width: 640px) {
     header { padding: 8px 12px; }
     .logo { font-size: 13px; }
@@ -248,6 +268,10 @@
     <div class="mode-toggle" id="modeToggle" style="display:none">
       <button id="modeMoveBtn" class="active" onclick="setMode('move')">Move</button>
       <button id="modeDrawBtn" onclick="setMode('draw')">Draw</button>
+    </div>
+    <div class="text-size-control" id="textSizeControl" style="display:none">
+      <span>Aa</span>
+      <input type="range" id="textSizeSlider" min="8" max="24" value="11" step="1">
     </div>
     <button class="btn" id="addBtn" onclick="document.getElementById('fileInput').click()">+ Image</button>
     <button class="btn danger" id="clearBtn" style="display:none" onclick="clearAll()">Clear</button>
@@ -325,6 +349,8 @@ const FLOW_COLORS = [
 // ── State ──
 const cam = { x: 0, y: 0, zoom: 1 };
 const images = []; // {el, x, y, w, h, naturalW, naturalH, dataUrl}
+let labelFontSize = 11;
+
 const state = {
   flows: [],
   currentFlowIndex: -1,
@@ -359,6 +385,12 @@ const labelInput = document.getElementById('labelInput');
 const labelInputWrapper = document.getElementById('labelInputWrapper');
 const labelConfirmBtn = document.getElementById('labelConfirmBtn');
 const modeToggle = document.getElementById('modeToggle');
+const textSizeControl = document.getElementById('textSizeControl');
+const textSizeSlider = document.getElementById('textSizeSlider');
+textSizeSlider.addEventListener('input', () => {
+  labelFontSize = parseInt(textSizeSlider.value);
+  renderAnnotations();
+});
 
 // ── Grid ──
 function drawGrid() {
@@ -572,6 +604,7 @@ function addImageToCanvas(dataUrl, natW, natH) {
   uploadOverlay.style.display = 'none';
   ['clearBtn','copyBtn','exportBtn'].forEach(id => document.getElementById(id).style.display = '');
   modeToggle.style.display = '';
+  textSizeControl.style.display = '';
 
   if (state.flows.length === 0) {
     setMode('draw');
@@ -915,18 +948,22 @@ function renderAnnotations() {
       drawLayer.appendChild(g);
 
       const labelText = box.label || `${i + 1}`;
-      const tw = labelText.length * 7 + 12;
+      const charW = Math.round(labelFontSize * 0.6);
+      const tw = labelText.length * charW + 12;
+      const badgeH = Math.round(labelFontSize * 1.545) + 1;
+      const badgeY = box.y - badgeH - 2;
+      const textY = box.y - Math.round(labelFontSize * 0.545);
       const lbg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      lbg.setAttribute('x', box.x); lbg.setAttribute('y', box.y - 20);
-      lbg.setAttribute('width', tw); lbg.setAttribute('height', 18);
+      lbg.setAttribute('x', box.x); lbg.setAttribute('y', badgeY);
+      lbg.setAttribute('width', tw); lbg.setAttribute('height', badgeH);
       lbg.setAttribute('fill', col.stroke); lbg.setAttribute('rx', '3');
       drawLayer.appendChild(lbg);
 
       const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      t.setAttribute('x', box.x + 6); t.setAttribute('y', box.y - 6);
+      t.setAttribute('x', box.x + 6); t.setAttribute('y', textY);
       t.setAttribute('fill', '#fff');
       t.setAttribute('font-family', "'JetBrains Mono', monospace");
-      t.setAttribute('font-size', '11'); t.setAttribute('font-weight', '500');
+      t.setAttribute('font-size', labelFontSize); t.setAttribute('font-weight', '500');
       t.setAttribute('pointer-events', 'none');
       t.textContent = labelText;
       drawLayer.appendChild(t);
@@ -1022,7 +1059,8 @@ function getWorldBounds() {
     maxX = Math.max(maxX, im.x + im.w); maxY = Math.max(maxY, im.y + im.h);
   });
   state.flows.forEach(flow => flow.boxes.forEach(box => {
-    minX = Math.min(minX, box.x); minY = Math.min(minY, box.y - 22);
+    const badgeH = Math.round(labelFontSize * 1.545) + 1;
+    minX = Math.min(minX, box.x); minY = Math.min(minY, box.y - badgeH - 2);
     maxX = Math.max(maxX, box.x + box.w); maxY = Math.max(maxY, box.y + box.h);
   }));
   if (minX === Infinity) return { x: 0, y: 0, w: 800, h: 600 };
@@ -1080,12 +1118,15 @@ function renderToCanvas() {
         ctx.strokeStyle = col.stroke; ctx.lineWidth = 2.5; ctx.fillStyle = col.fill;
         roundRect(ctx, box.x, box.y, box.w, box.h, 4); ctx.fill(); ctx.stroke();
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
-        ctx.font = "600 13px 'DM Sans', sans-serif";
+        ctx.font = `500 ${labelFontSize}px 'JetBrains Mono', monospace`;
         const tw = ctx.measureText(box.label).width + 12;
+        const badgeH = Math.round(labelFontSize * 1.545) + 1;
+        const badgeY = box.y - badgeH - 2;
+        const textY = box.y - Math.round(labelFontSize * 0.545);
         ctx.fillStyle = col.stroke;
-        roundRect(ctx, box.x, box.y - 20, tw, 18, 3); ctx.fill();
+        roundRect(ctx, box.x, badgeY, tw, badgeH, 3); ctx.fill();
         ctx.fillStyle = '#fff';
-        ctx.fillText(box.label, box.x + 6, box.y - 6);
+        ctx.fillText(box.label, box.x + 6, textY);
         ctx.restore();
       });
     });
